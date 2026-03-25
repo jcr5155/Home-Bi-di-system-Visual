@@ -1,0 +1,549 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>V2G + ESS Power Flow Simulation</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing:border-box; margin:0; padding:0; }
+html, body {
+  background:#090c10; color:#fff;
+  font-family:'Inter',sans-serif;
+  min-height:100vh;
+  display:flex; flex-direction:column; align-items:center;
+  padding-bottom:36px;
+}
+header {
+  width:100%; max-width:960px;
+  display:flex; align-items:baseline; justify-content:space-between;
+  padding:16px 20px 4px;
+}
+header h1 { font-size:12px; font-weight:700; letter-spacing:3px; text-transform:uppercase; color:rgba(255,255,255,0.40); }
+#mode-label { font-size:12px; font-weight:500; color:#4fc3f7; letter-spacing:.3px; }
+
+canvas { display:block; cursor:pointer; width:100%; max-width:960px; height:auto; }
+
+/* ── Controls ─────────────────────────────── */
+#controls {
+  width:100%; max-width:960px;
+  padding:10px 12px 0;
+  display:flex; flex-direction:column; gap:10px;
+}
+.ctrl-row { display:flex; gap:10px; flex-wrap:wrap; }
+.ctrl-block {
+  flex:1; min-width:140px;
+  background:rgba(255,255,255,0.02);
+  border:1px solid rgba(255,255,255,0.06);
+  border-radius:10px;
+  padding:11px 13px;
+}
+.ctrl-label {
+  font-size:9px; font-weight:700; letter-spacing:2px;
+  text-transform:uppercase; color:rgba(255,255,255,0.20);
+  margin-bottom:8px;
+}
+.ctrl-label + .ctrl-label { margin-top:8px; }
+
+/* Button rows */
+.btn-row   { display:flex; flex-direction:column; gap:5px; }
+.btn-row-h { display:flex; gap:5px; flex-wrap:wrap; }
+
+.mode-btn {
+  background:rgba(255,255,255,0.03);
+  border:1px solid rgba(255,255,255,0.07);
+  border-radius:7px; color:rgba(255,255,255,0.38);
+  font-family:'Inter',sans-serif; font-size:10.5px; font-weight:500;
+  padding:8px 10px; cursor:pointer; text-align:left;
+  transition:all .15s; line-height:1.4;
+}
+.mode-btn:hover { border-color:rgba(255,255,255,0.14); color:rgba(255,255,255,0.60); }
+.mode-sub { color:rgba(255,255,255,0.22); font-size:9px; display:block; margin-top:2px; }
+.num { color:rgba(79,195,247,0.65); font-weight:700; margin-right:2px; }
+
+/* Active color variants per group */
+.ev-mode-btns .mode-btn.active  { background:rgba(79,195,247,0.08);  border-color:rgba(79,195,247,0.40);  color:#fff; }
+.ev-mode-btns .mode-btn.active .mode-sub { color:rgba(79,195,247,0.45); }
+.ess-mode-btns .mode-btn.active { background:rgba(192,132,252,0.08); border-color:rgba(192,132,252,0.40); color:#fff; }
+.ess-mode-btns .mode-btn.active .mode-sub { color:rgba(192,132,252,0.45); }
+.vehicle-btns .mode-btn.active  { background:rgba(76,201,100,0.08);  border-color:rgba(76,201,100,0.40);  color:#4cd964; }
+.speed-btns   .mode-btn.active  { background:rgba(79,195,247,0.10);  border-color:rgba(79,195,247,0.40);  color:#4fc3f7; }
+.speed-btns .mode-btn { padding:6px 10px; font-size:10px; text-align:center; flex:1; }
+
+/* Play / reset */
+.play-btn {
+  background:rgba(76,201,100,0.10);
+  border:1px solid rgba(76,201,100,0.30);
+  border-radius:7px; color:#4cd964;
+  font-family:'Inter',sans-serif; font-size:17px;
+  padding:4px 16px; cursor:pointer; transition:all .15s;
+}
+.play-btn:hover { background:rgba(76,201,100,0.18); }
+.play-btn.paused { background:rgba(255,255,255,0.04); border-color:rgba(255,255,255,0.12); color:rgba(255,255,255,0.45); }
+.reset-btn {
+  background:rgba(255,255,255,0.03);
+  border:1px solid rgba(255,255,255,0.09);
+  border-radius:7px; color:rgba(255,255,255,0.40);
+  font-family:'Inter',sans-serif; font-size:10px; font-weight:600;
+  padding:6px 12px; cursor:pointer; letter-spacing:.5px; transition:all .15s;
+}
+.reset-btn:hover { color:rgba(255,255,255,0.70); border-color:rgba(255,255,255,0.18); }
+
+/* Sliders */
+.slider-row { display:flex; flex-direction:column; gap:5px; margin-bottom:6px; }
+.slider-row:last-child { margin-bottom:0; }
+.slider-header { display:flex; justify-content:space-between; align-items:baseline; }
+.slider-name { font-size:10.5px; font-weight:600; color:rgba(255,255,255,0.48); }
+.slider-val  { font-size:12px; font-weight:700; font-variant-numeric:tabular-nums; }
+.slider-limits { display:flex; justify-content:space-between; font-size:9px; color:rgba(255,255,255,0.16); margin-top:-1px; }
+
+input[type=range] {
+  -webkit-appearance:none; appearance:none;
+  width:100%; height:4px; border-radius:2px; outline:none; cursor:pointer;
+  background:#1e2430;
+}
+input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance:none; width:15px; height:15px; border-radius:50%;
+  border:2px solid currentColor; background:#090c10; cursor:pointer;
+  transition:transform .12s;
+}
+input[type=range]::-webkit-slider-thumb:hover { transform:scale(1.2); }
+input[type=range]::-moz-range-thumb {
+  width:15px; height:15px; border-radius:50%;
+  border:2px solid currentColor; background:#090c10; cursor:pointer;
+}
+
+/* Toggles */
+.toggle-row {
+  display:flex; align-items:center; gap:8px;
+  padding:7px 10px;
+  background:rgba(255,255,255,0.02);
+  border:1px solid rgba(255,255,255,0.06);
+  border-radius:7px; cursor:pointer; user-select:none;
+  transition:border-color .16s; margin-top:6px;
+}
+.toggle-row.on-solar { border-color:rgba(245,166,35,0.32); background:rgba(245,166,35,0.05); }
+.toggle-row.on-peak  { border-color:rgba(245,166,35,0.50); background:rgba(245,166,35,0.10); }
+.pip { width:26px; height:14px; background:#1a1a1a; border-radius:7px; position:relative; flex-shrink:0; }
+.pip::after { content:''; position:absolute; top:2px; left:2px; width:10px; height:10px; border-radius:50%; background:#3a3a3a; transition:all .18s; }
+.toggle-row.on-solar .pip::after { left:14px; background:#f5a623; box-shadow:0 0 5px rgba(245,166,35,.8); }
+.toggle-row.on-peak  .pip::after { left:14px; background:#f5a623; box-shadow:0 0 5px rgba(245,166,35,.8); }
+.toggle-row span { font-size:11px; font-weight:500; color:rgba(255,255,255,0.38); }
+.toggle-row.on-solar span,
+.toggle-row.on-peak  span  { color:rgba(255,255,255,0.78); }
+
+/* Hidden */
+.hidden { display:none !important; }
+
+@media(max-width:620px) {
+  .ctrl-row { flex-direction:column; }
+  .ctrl-block, .btn-row-h { min-width:unset; width:100%; }
+  header { padding:12px 12px 4px; }
+}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>V2G + ESS Power Flow Simulation</h1>
+  <div id="mode-label">EV Charging</div>
+</header>
+
+<canvas id="c" width="960" height="640"></canvas>
+
+<div id="controls">
+
+  <!-- Row 1: Sim controls -->
+  <div class="ctrl-row">
+    <div class="ctrl-block" style="flex:0 0 auto;min-width:auto">
+      <div class="ctrl-label">Simulation</div>
+      <div style="display:flex;gap:7px;align-items:center;flex-wrap:wrap">
+        <button class="play-btn" id="play-btn">⏸</button>
+        <button class="reset-btn" id="reset-btn">↺ Reset Day</button>
+        <div class="btn-row-h speed-btns">
+          <button class="mode-btn active" data-speed="1">1×</button>
+          <button class="mode-btn" data-speed="2">2×</button>
+          <button class="mode-btn" data-speed="4">4×</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Manual peak toggle — only visible in Self Consumption mode -->
+    <div class="ctrl-block hidden" id="peak-block" style="flex:0 0 auto;min-width:auto">
+      <div class="ctrl-label">Rate Period (manual)</div>
+      <div class="toggle-row" id="peak-toggle">
+        <div class="pip"></div>
+        <span>Off-Peak</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Row 2: EV mode | ESS mode -->
+  <div class="ctrl-row">
+    <div class="ctrl-block">
+      <div class="ctrl-label">EV Operation Mode</div>
+      <div class="btn-row ev-mode-btns">
+        <button class="mode-btn active" data-evmode="0"><span class="num">①</span> EV Charging<span class="mode-sub">Grid + Solar → EV</span></button>
+        <button class="mode-btn" data-evmode="1"><span class="num">②</span> V2G – Savings<span class="mode-sub">EV discharges to cover home load</span></button>
+        <button class="mode-btn" data-evmode="2"><span class="num">③</span> V2G VPP – Variable<span class="mode-sub">EV dynamically tracks net-zero import</span></button>
+        <button class="mode-btn" data-evmode="3"><span class="num">④</span> V2G VPP – Fixed<span class="mode-sub">EV at fixed rate, export allowed</span></button>
+      </div>
+    </div>
+
+    <div class="ctrl-block">
+      <div class="ctrl-label">ESS Battery Mode</div>
+      <div class="btn-row ess-mode-btns">
+        <button class="mode-btn active" data-essmode="0">🔒 Backup Only<span class="mode-sub">Charges to 100%, never discharges</span></button>
+        <button class="mode-btn" data-essmode="1">⚡ Self Consumption<span class="mode-sub">Manual peak toggle — discharge on-peak</span></button>
+        <button class="mode-btn" data-essmode="2">📅 TOU Discharge<span class="mode-sub">Auto schedule: peak 7–9 AM &amp; 5–9 PM</span></button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Row 3: Vehicle/EV | ESS/Solar sliders -->
+  <div class="ctrl-row">
+
+    <div class="ctrl-block">
+      <div class="ctrl-label">Vehicle</div>
+      <div class="btn-row-h vehicle-btns" style="margin-bottom:10px">
+        <button class="mode-btn active" data-vehicle="truck" style="flex:1;text-align:center">🚛 Sierra EV<span class="mode-sub" style="display:block">200 kWh</span></button>
+        <button class="mode-btn" data-vehicle="suv" style="flex:1;text-align:center">🚙 Lyriq SUV<span class="mode-sub" style="display:block">100 kWh</span></button>
+      </div>
+
+      <div class="ctrl-label">EV Starting SOC</div>
+      <div class="slider-row">
+        <div class="slider-header">
+          <span class="slider-name">⚡ Starting charge</span>
+          <span class="slider-val" id="ev-soc-val" style="color:#4cd964">80%</span>
+        </div>
+        <input type="range" id="ev-soc-slider" min="0" max="100" step="1" value="80" style="accent-color:#4cd964;color:#4cd964">
+        <div class="slider-limits"><span>0%</span><span>100%</span></div>
+      </div>
+
+      <div class="ctrl-label">EV Charge / Discharge Rate</div>
+      <div class="slider-row">
+        <div class="slider-header">
+          <span class="slider-name">⚡ Rate</span>
+          <span class="slider-val" id="ev-val" style="color:#4cd964">7.2 kW</span>
+        </div>
+        <input type="range" id="ev-slider" min="0.5" max="11.5" step="0.1" value="7.2" style="accent-color:#4cd964;color:#4cd964">
+        <div class="slider-limits"><span>0.5 kW</span><span>11.5 kW</span></div>
+      </div>
+    </div>
+
+    <div class="ctrl-block">
+      <div class="ctrl-label">ESS Stationary Battery</div>
+      <div class="slider-row">
+        <div class="slider-header">
+          <span class="slider-name">🔋 Capacity</span>
+          <span class="slider-val" id="ess-cap-val" style="color:#c084fc">17 kWh</span>
+        </div>
+        <input type="range" id="ess-cap-slider" min="5" max="40" step="1" value="17" style="accent-color:#c084fc;color:#c084fc">
+        <div class="slider-limits"><span>5 kWh</span><span>40 kWh</span></div>
+      </div>
+
+      <div class="ctrl-label">ESS Starting SOC</div>
+      <div class="slider-row">
+        <div class="slider-header">
+          <span class="slider-name">🔋 Starting charge</span>
+          <span class="slider-val" id="ess-soc-val" style="color:#c084fc">70%</span>
+        </div>
+        <input type="range" id="ess-soc-slider" min="35" max="100" step="1" value="70" style="accent-color:#c084fc;color:#c084fc">
+        <div class="slider-limits"><span>35% min</span><span>100%</span></div>
+      </div>
+
+      <div class="ctrl-label">Solar PV</div>
+      <div class="slider-row">
+        <div class="slider-header">
+          <span class="slider-name">☀ Peak production</span>
+          <span class="slider-val" id="sol-val" style="color:#f5a623">5.0 kW</span>
+        </div>
+        <input type="range" id="sol-slider" min="0" max="12" step="0.5" value="5.0" style="accent-color:#f5a623;color:#f5a623">
+        <div class="slider-limits"><span>0 kW</span><span>12 kW peak</span></div>
+      </div>
+      <div class="toggle-row on-solar" id="solar-toggle">
+        <div class="pip"></div>
+        <span>Solar PV enabled</span>
+      </div>
+    </div>
+
+  </div>
+</div><!-- /controls -->
+
+<script>
+'use strict';
+
+const canvas = document.getElementById('c');
+const ctx    = canvas.getContext('2d');
+const W = 960, H = 640;
+const MAX_KW = 18; // normalization for particle speed / glow
+
+// ── Constants ──────────────────────────────────────────────────────────
+const EV_CAP      = { truck: 200, suv: 100 };
+const MAX_ESS_KW  = 11.5;
+const ESS_MIN_SOC = 35;   // hard floor — battery always keeps this reserve
+const BASE_TICK   = 0.010; // sim-hours per frame at 1× (24 hr ≈ 40 real sec at 60 fps)
+
+// TOU peak: 7–9 AM and 5–9 PM
+function isPeakHour(h) {
+  return (h >= 7 && h < 9) || (h >= 17 && h < 21);
+}
+
+// Solar bell curve — peaks ~1 PM, zero before 6 AM / after 8 PM
+function getSolar(h, peak, enabled) {
+  if (!enabled || h < 6 || h > 20) return 0;
+  return peak * Math.sin(Math.PI * (h - 6) / 14);
+}
+
+// Residential base load curve (kW)
+const LOAD_PTS = [
+  [0,1.8],[2,1.4],[5,1.1],[6,1.5],[7,2.8],[9,4.0],
+  [11,3.2],[14,2.8],[17,3.5],[19,5.2],[21,5.0],[22,4.0],[24,1.8]
+];
+function getBaseLoad(h) {
+  for (let i = 0; i < LOAD_PTS.length - 1; i++) {
+    if (h >= LOAD_PTS[i][0] && h < LOAD_PTS[i+1][0]) {
+      const t = (h - LOAD_PTS[i][0]) / (LOAD_PTS[i+1][0] - LOAD_PTS[i][0]);
+      return LOAD_PTS[i][1] + t * (LOAD_PTS[i+1][1] - LOAD_PTS[i][1]);
+    }
+  }
+  return 1.8;
+}
+
+// ── State ──────────────────────────────────────────────────────────────
+const S = {
+  simHour:  0,
+  playing:  true,
+  simSpeed: 1,
+  tick:     0,
+
+  evMode:   0,          // 0=Charging 1=Savings 2=VPP-Var 3=VPP-Fixed
+  vehicle:  'truck',
+  evRateKW: 7.2,
+  evSOC:    80,         // live value, changes during sim
+
+  essMode:     0,       // 0=Backup 1=SelfCons 2=TOU
+  essCapacity: 17,
+  essSOC:      70,      // live value, changes during sim
+
+  solar:    true,
+  solarPeak: 5.0,
+
+  loads:  { hvac:true, stove:false, dryer:false, hwh:false },
+  loadKW: { hvac:3.5,  stove:5.5,   dryer:5.0,   hwh:4.5  },
+
+  manualPeak: false,    // used by Self Consumption mode
+
+  // "starting" values — restored on reset
+  _evSOCStart:  80,
+  _essSOCStart: 70,
+};
+
+// ── Node layout ────────────────────────────────────────────────────────
+const NODES = {
+  solar: { x:682, y:132, r:50, color:'#f5a623', label:'Solar'  },
+  grid:  { x:72,  y:330, r:50, color:'#9b9b9b', label:'Grid'   },
+  meter: { x:284, y:330, r:34, color:'#94a3b8', label:'Meter'  },
+  home:  { x:555, y:330, r:50, color:'#4fc3f7', label:'Home'   },
+  ev:    { x:400, y:520, r:48, color:'#4cd964', label:'EV'     },
+  ess:   { x:710, y:520, r:48, color:'#c084fc', label:'ESS'    },
+};
+
+const LOAD_NODES = {
+  hvac:  { x:870, y:155, r:27, color:'#38bdf8', label:'HVAC',         kw:3.5, icon:'❄' },
+  stove: { x:870, y:258, r:27, color:'#fb923c', label:'Stove',        kw:5.5, icon:'♨' },
+  dryer: { x:870, y:361, r:27, color:'#c084fc', label:'Dryer',        kw:5.0, icon:'💨' },
+  hwh:   { x:870, y:464, r:27, color:'#f87171', label:'Water Heater', kw:4.5, icon:'🔥' },
+};
+
+// ── Power flow calculation (KCL at main panel) ─────────────────────────
+function calcFlows() {
+  const h   = S.simHour;
+  const sol = getSolar(h, S.solarPeak, S.solar);
+  const base = getBaseLoad(h);
+  const tog  = Object.keys(S.loads).reduce((t,k) => t + (S.loads[k] ? S.loadKW[k] : 0), 0);
+  const load = base + tog;
+
+  const peak = S.essMode === 2 ? isPeakHour(h)
+             : S.essMode === 1 ? S.manualPeak
+             : false;
+
+  // ── EV power  (+discharge / −charge) ────────────────────────────────
+  let evKW = 0;
+  const evCanDis = S.evSOC > 5.0;
+  const evCanChg = S.evSOC < 99.5;
+
+  switch (S.evMode) {
+    case 0: // Charging
+      evKW = evCanChg ? -S.evRateKW : 0;
+      break;
+    case 1: { // Savings
+      const net = load - sol;
+      evKW = (net > 0 && evCanDis) ? Math.min(S.evRateKW, net) : 0;
+      break;
+    }
+    case 2: { // VPP Variable — dithered output
+      const net = load - sol;
+      const sig = Math.sin(S.tick / 90) * 0.22;
+      evKW = (net > 0 && evCanDis) ? Math.min(S.evRateKW, Math.max(0, net + sig)) : 0;
+      break;
+    }
+    case 3: // VPP Fixed
+      evKW = evCanDis ? S.evRateKW : 0;
+      break;
+  }
+
+  // ── ESS power (+discharge / −charge) ────────────────────────────────
+  let essKW = 0;
+  const essCanDis = S.essSOC > ESS_MIN_SOC + 0.5;
+  const essCanChg = S.essSOC < 99.5;
+
+  switch (S.essMode) {
+    case 0: // Backup Only — charge always (not from EV discharge), never discharge
+      if (essCanChg && evKW <= 0) essKW = -Math.min(MAX_ESS_KW, 5.0);
+      break;
+
+    case 1: // Self Consumption (manual peak toggle)
+    case 2: // TOU Discharge  (auto peak schedule)
+      if (!peak) {
+        if (essCanChg) essKW = -MAX_ESS_KW;
+      } else {
+        if (essCanDis) {
+          // Priority stacking: Solar first → EV up to 9.6 kW → ESS supplements
+          const totalDemand = load + (evKW < 0 ? Math.abs(evKW) : 0);
+          const evContrib   = Math.min(9.6, Math.max(0, evKW));
+          const remaining   = Math.max(0, totalDemand - sol - evContrib);
+          const maxESS      = Math.min(MAX_ESS_KW, 11.5 - evContrib);
+          essKW = Math.min(maxESS, remaining);
+        }
+      }
+      break;
+  }
+
+  // Grid balances everything (positive = import, negative = export)
+  const gridKW = load - sol - evKW - essKW;
+
+  return { sol, load, base, tog, evKW, essKW, gridKW, peak, h };
+}
+
+// ── Simulation state update ────────────────────────────────────────────
+function updateSim(flows) {
+  if (!S.playing) return;
+  const dt = BASE_TICK * S.simSpeed;
+
+  // EV SOC
+  S.evSOC  -= (flows.evKW  / EV_CAP[S.vehicle]) * dt * 100;
+  S.evSOC   = Math.max(0, Math.min(100, S.evSOC));
+
+  // ESS SOC
+  S.essSOC -= (flows.essKW / S.essCapacity) * dt * 100;
+  S.essSOC  = Math.max(ESS_MIN_SOC, Math.min(100, S.essSOC));
+
+  S.simHour += dt;
+  if (S.simHour >= 24) S.simHour -= 24;
+}
+
+// ── Particle system ────────────────────────────────────────────────────
+const pools = {
+  solar:[], grid:[], meter:[], ev:[], ess:[],
+  hvac:[], stove:[], dryer:[], hwh:[]
+};
+
+function tickPool(pool, pw) {
+  const abs = Math.abs(pw);
+  if (abs < 0.05) { pool.length = 0; return; }
+  const toC = pw > 0;
+  const spd = (abs / MAX_KW) * 0.022 + 0.006;
+  const dly = Math.max(4, Math.round(28 - (abs / MAX_KW) * 18));
+  if (S.tick % dly === 0) pool.push({ t: toC ? 0.04 : 0.96, dir: toC ? 1 : -1, abs, spd });
+  for (let i = pool.length - 1; i >= 0; i--) {
+    pool[i].t += pool[i].dir * pool[i].spd;
+    if (pool[i].t < 0 || pool[i].t > 1) pool.splice(i, 1);
+  }
+}
+
+function rgba(hex, a) {
+  const r=parseInt(hex.slice(1,3),16), g=parseInt(hex.slice(3,5),16), b=parseInt(hex.slice(5,7),16);
+  return `rgba(${r},${g},${b},${a})`;
+}
+function lerp(a,b,t) { return a+(b-a)*t; }
+function bez(t,fx,fy,cpx,cpy,tx,ty) {
+  const m=1-t;
+  return { x:m*m*fx+2*m*t*cpx+t*t*tx, y:m*m*fy+2*m*t*cpy+t*t*ty };
+}
+
+function drawParticles(pool, fx,fy,cpx,cpy,tx,ty, color) {
+  pool.forEach(p => {
+    const pos = bez(p.t,fx,fy,cpx,cpy,tx,ty);
+    const r   = 2.0 + (p.abs/MAX_KW)*2.4;
+    const g   = ctx.createRadialGradient(pos.x,pos.y,0,pos.x,pos.y,r*3.0);
+    g.addColorStop(0, rgba(color,0.90));
+    g.addColorStop(0.4, rgba(color,0.26));
+    g.addColorStop(1, rgba(color,0));
+    ctx.beginPath(); ctx.arc(pos.x,pos.y,r*3.0,0,Math.PI*2);
+    ctx.fillStyle=g; ctx.fill();
+    ctx.beginPath(); ctx.arc(pos.x,pos.y,r*0.50,0,Math.PI*2);
+    ctx.fillStyle='#fff'; ctx.fill();
+  });
+}
+
+// ── Drawing helpers ────────────────────────────────────────────────────
+function rr(x,y,w,h,r) {
+  ctx.beginPath();
+  ctx.moveTo(x+r,y); ctx.lineTo(x+w-r,y);
+  ctx.arcTo(x+w,y,x+w,y+r,r); ctx.lineTo(x+w,y+h-r);
+  ctx.arcTo(x+w,y+h,x+w-r,y+h,r); ctx.lineTo(x+r,y+h);
+  ctx.arcTo(x,y+h,x,y+h-r,r); ctx.lineTo(x,y+r);
+  ctx.arcTo(x,y,x+r,y,r); ctx.closePath();
+}
+
+function drawSpoke(x1,y1,x2,y2,col,active) {
+  ctx.save();
+  ctx.strokeStyle=active?rgba(col,0.20):'rgba(255,255,255,0.04)';
+  ctx.lineWidth=active?2:1.5; ctx.lineCap='round';
+  ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
+  ctx.restore();
+}
+
+function drawArrow(x1,y1,x2,y2,col,t=0.55) {
+  const ax=lerp(x1,x2,t), ay=lerp(y1,y2,t);
+  const ang=Math.atan2(y2-y1,x2-x1), sz=5.5;
+  ctx.save();
+  ctx.strokeStyle=rgba(col,0.42); ctx.lineWidth=1.5; ctx.lineCap='round';
+  ctx.beginPath();
+  ctx.moveTo(ax-Math.cos(ang-0.45)*sz, ay-Math.sin(ang-0.45)*sz);
+  ctx.lineTo(ax, ay);
+  ctx.lineTo(ax-Math.cos(ang+0.45)*sz, ay-Math.sin(ang+0.45)*sz);
+  ctx.stroke(); ctx.restore();
+}
+
+function socColor(soc, minSoc=0) {
+  const eff = (soc - minSoc) / (100 - minSoc);
+  if (eff > 0.55) return '#4cd964';
+  if (eff > 0.20) return '#f5a623';
+  return '#ff3b30';
+}
+
+// SOC ring drawn around a node
+function drawSOCRing(x,y,r,soc,minSoc,col) {
+  const rr2 = r + 9;
+  // Track
+  ctx.beginPath(); ctx.arc(x,y,rr2,0,Math.PI*2);
+  ctx.strokeStyle='rgba(255,255,255,0.07)'; ctx.lineWidth=3.5; ctx.stroke();
+  // Fill arc
+  if (soc > 0) {
+    const sc = socColor(soc, minSoc);
+    ctx.beginPath(); ctx.arc(x,y,rr2,-Math.PI/2,-Math.PI/2+(soc/100)*Math.PI*2);
+    ctx.strokeStyle=sc; ctx.lineWidth=3.5; ctx.lineCap='round'; ctx.stroke();
+  }
+  // Min SOC tick for ESS
+  if (minSoc > 0) {
+    const ma = -Math.PI/2 + (minSoc/100)*Math.PI*2;
+    ctx.save();
+    ctx.strokeStyle='rgba(255,59,48,0.55)'; ctx.lineWidth=2; ctx.lineCap='round';
+    ctx.beginPath();
+    ctx.moveTo(x+Math.cos(ma)*(rr2-6), y+Math.sin(ma)*(rr2-6));
+    ctx.lineTo(x+Math.cos(ma)*(rr2+6), y+Math.sin(ma)*(rr2+6));
+    ctx.stroke(); ctx.restore();
+  }
+}
