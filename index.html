@@ -300,8 +300,8 @@ const W = 960, H = 700;
 
 const NODES = {
   solar: { x:558,  y:82,  r:50, color:'#f5a623', label:'Solar'  },
-  grid:  { x:82,   y:295, r:50, color:'#9b9b9b', label:'Grid'   },
-  meter: { x:295,  y:295, r:34, color:'#94a3b8', label:'Meter'  },
+  grid:  { x:82,   y:295, r:50, color:'#9b9b9b', label:'Electric Grid'   },
+  meter: { x:295,  y:295, r:34, color:'#94a3b8', label:'Utility Meter'  },
   home:  { x:558,  y:295, r:52, color:'#4fc3f7', label:'Home'   },
   ess:   { x:390,  y:490, r:52, color:'#a78bfa', label:'ESS'    },
   ev:    { x:726,  y:490, r:52, color:'#4cd964', label:'EV'     },
@@ -843,7 +843,7 @@ function drawMeterNode(f) {
   ctx.font=`700 ${abs>=10?11:12}px Inter,sans-serif`;
   ctx.fillText(abs.toFixed(1)+' kW', n.x, by);
   ctx.fillStyle=rgba(col,active?0.72:0.24); ctx.font='600 10px Inter,sans-serif';
-  ctx.fillText('METER', n.x, by+12);
+  ctx.fillText('UTILITY METER', n.x, by+12);
   ctx.fillStyle=rgba(col,0.36); ctx.font='400 9px Inter,sans-serif';
   ctx.fillText(f.pGrid>0.05?'Importing':f.pGrid<-0.05?'Exporting':'Idle', n.x, by+23);
 }
@@ -1482,5 +1482,112 @@ document.querySelectorAll('#ev-mode-btns .mode-btn').forEach(btn => {
 
 frame();
 </script>
+<!-- ── User Guide ─────────────────────────────────────────────── -->
+<div id="guide">
+
+  <div class="guide-cols">
+
+    <div class="guide-section">
+      <div class="guide-heading">How to Use</div>
+      <ul class="guide-list">
+        <li>Select an <strong>EV Mode</strong> and <strong>ESS Mode</strong> to configure how each storage device behaves. Modes can be mixed freely.</li>
+        <li>Click any <strong>load node</strong> on the diagram (HVAC, Stove, Dryer, Water Heater) to toggle it on or off and see how it affects power flows.</li>
+        <li>Use the <strong>Power Settings</strong> sliders to set EV charge/discharge rate, solar peak output, and ESS capacity.</li>
+        <li>Set <strong>Starting SOC</strong> for EV and ESS, then hit <strong>↺ Reset Day</strong> to restart the 24-hour simulation from 6 AM with those values.</li>
+        <li>In <strong>V2G VPP Variable or Fixed</strong>, enter a start and end time for your grid event window. The EV discharges during that window and charges outside of it.</li>
+        <li>Use <strong>Peak Rates</strong> toggle to force peak or off-peak pricing at any time — useful for testing ESS and V2G behavior without waiting for 4 PM in the sim.</li>
+        <li>The <strong>SOC sparklines</strong> on the timeline trace EV (green) and ESS (purple) state of charge across the day.</li>
+      </ul>
+    </div>
+
+    <div class="guide-section">
+      <div class="guide-heading">EV Mode Definitions</div>
+      <ul class="guide-list">
+        <li><span class="pill pill-green">EV Charging</span> Standard one-way charging. EV draws from grid and/or solar. No metering or interconnection requirements beyond a standard EV charger permit.</li>
+        <li><span class="pill pill-orange">V2G – Savings</span> EV discharges to cover home loads during peak rate windows, reducing grid import. Power stays behind the meter — <strong>no export to grid</strong>. Requires a bidirectional charger (e.g. GM Energy V2H/Wallbox) and a <strong>parallel operating agreement</strong> with your utility. Utility meter data (via AMI, meter collar, or V2H kit) must reach the charger so it knows net consumption.</li>
+        <li><span class="pill pill-cyan">V2G VPP – Variable</span> EV responds to a utility dispatch signal, dynamically adjusting output to target zero net grid draw. Requires bidirectional charger, parallel operating agreement, <strong>active V2G/V2X program enrollment</strong> with GM Energy or aggregator, and real-time meter data via AMI integration, a separate revenue-grade meter kit, meter collar, or the GM Energy V2H kit's built-in CT sensors.</li>
+        <li><span class="pill pill-purple">V2G VPP – Fixed</span> EV discharges at a pre-committed fixed rate. Home loads are served first; surplus exports to the grid. Same requirements as Variable, plus an <strong>export metering agreement</strong> and net-metering or export tariff with your utility.</li>
+      </ul>
+    </div>
+
+    <div class="guide-section">
+      <div class="guide-heading">ESS Mode Definitions</div>
+      <ul class="guide-list">
+        <li><span class="pill pill-red">Backup Only</span> Battery charges to 100% and holds — never discharges during normal operation. Reserved for outage backup. No special interconnection beyond standard ESS permit. Simplest utility approval path.</li>
+        <li><span class="pill pill-cyan">Self Consumption</span> Battery discharges whenever home load exceeds solar production, minimizing grid draw. Charges from solar surplus or off-peak grid. Requires ESS interconnection permit and parallel operating agreement. Meter data is needed to measure net load — typically provided by CT sensors in the ESS gateway (e.g. GM Energy ESS) or a utility-provided smart meter.</li>
+        <li><span class="pill pill-orange">TOU Discharge</span> Battery charges at full rate during off-peak hours and discharges only during peak rate windows. Behavior is identical to V2G – Savings but from the stationary battery. Requires same metering infrastructure as Self Consumption plus a <strong>TOU rate structure</strong> from your utility (e.g. PSE EV TOU rate).</li>
+      </ul>
+    </div>
+
+    <div class="guide-section">
+      <div class="guide-heading">Metering &amp; Interconnection Notes</div>
+      <ul class="guide-list">
+        <li><strong>AMI integration</strong> — utility pushes real-time interval meter data to the charger or home energy system via API. Most common with PSE, Xcel, and other advanced-metering utilities. Lowest hardware cost but depends on utility program availability.</li>
+        <li><strong>Meter collar / meter socket adapter</strong> — installs between the utility meter and socket, adding CT sensors to measure whole-home consumption without a separate meter. Used by some V2H kits (e.g. Span, Lumin) when AMI data isn't available.</li>
+        <li><strong>Separate revenue-grade meter</strong> — a second utility-approved meter installed at the inverter or charger output. Required by some utilities for export metering in VPP or net-metering programs. Adds cost and requires utility coordination.</li>
+        <li><strong>V2H kit built-in CTs</strong> — the GM Energy V2H system includes current transformers that mount inside the main panel, measuring net consumption locally. This is the most practical path for V2G Savings and Self Consumption without AMI or a meter collar.</li>
+        <li><strong>Parallel operating agreement</strong> — a utility contract required before any device can operate in parallel with the grid (i.e. export or offset load bidirectionally). Required for all V2G and ESS discharge modes. Often bundled with the interconnection application.</li>
+        <li>Power values in this simulation are illustrative. Actual behavior depends on inverter capability, utility interconnection limits, and GM Energy software configuration.</li>
+      </ul>
+    </div>
+
+  </div>
+</div>
+
+<style>
+#guide {
+  width:100%; max-width:960px;
+  margin-top:20px;
+  padding:0 12px 24px;
+}
+.guide-cols {
+  display:grid;
+  grid-template-columns: repeat(auto-fill, minmax(420px, 1fr));
+  gap:14px;
+}
+.guide-section {
+  background:rgba(255,255,255,0.02);
+  border:1px solid rgba(255,255,255,0.06);
+  border-radius:10px;
+  padding:14px 16px;
+}
+.guide-heading {
+  font-size:9px; font-weight:700; letter-spacing:2px;
+  text-transform:uppercase; color:rgba(255,255,255,0.22);
+  margin-bottom:10px;
+  padding-bottom:6px;
+  border-bottom:1px solid rgba(255,255,255,0.06);
+}
+.guide-list {
+  list-style:none; padding:0;
+  display:flex; flex-direction:column; gap:7px;
+}
+.guide-list li {
+  font-size:11px; line-height:1.65;
+  color:rgba(255,255,255,0.42);
+  padding-left:12px; position:relative;
+}
+.guide-list li::before {
+  content:'–'; position:absolute; left:0;
+  color:rgba(255,255,255,0.18);
+}
+.guide-list li strong { color:rgba(255,255,255,0.65); font-weight:600; }
+.pill {
+  display:inline-block;
+  font-size:9px; font-weight:700; letter-spacing:0.5px;
+  padding:2px 7px; border-radius:4px;
+  text-transform:uppercase; margin-right:4px;
+  vertical-align:middle; position:relative; top:-1px;
+}
+.pill-green  { background:rgba(76,201,100,0.14);  color:#4cd964; border:1px solid rgba(76,201,100,0.28); }
+.pill-orange { background:rgba(245,166,35,0.14);  color:#f5a623; border:1px solid rgba(245,166,35,0.28); }
+.pill-cyan   { background:rgba(79,195,247,0.12);  color:#4fc3f7; border:1px solid rgba(79,195,247,0.26); }
+.pill-purple { background:rgba(192,132,252,0.12); color:#c084fc; border:1px solid rgba(192,132,252,0.26); }
+.pill-red    { background:rgba(248,113,113,0.12); color:#f87171; border:1px solid rgba(248,113,113,0.26); }
+@media (max-width:620px) {
+  .guide-cols { grid-template-columns:1fr; }
+}
+</style>
+
 </body>
 </html>
