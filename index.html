@@ -82,6 +82,8 @@ input[type=range]::-moz-range-thumb {
 #sl-ess-cap { accent-color:#a78bfa; color:#a78bfa; }
 #sl-ev-soc  { accent-color:#4cd964; color:#4cd964; }
 #sl-ess-soc { accent-color:#a78bfa; color:#a78bfa; }
+#sl-ev-min  { accent-color:#4cd964; color:#4cd964; }
+#sl-ess-min { accent-color:#a78bfa; color:#a78bfa; }
 
 /* ── Toggle ── */
 .tog-row {
@@ -271,6 +273,30 @@ input[type=range]::-moz-range-thumb {
     </div>
   </div>
 
+  <!-- Min discharge floor sliders -->
+  <div class="slider-block" style="flex:0 1 215px; min-width:180px">
+    <div class="ctrl-label" style="margin-bottom:0">Min Discharge Floor</div>
+    <div class="slider-row">
+      <div class="slider-header">
+        <span class="slider-name" style="color:#4cd964">EV Min SOC</span>
+        <span class="slider-val" id="lbl-ev-min" style="color:#4cd964;font-size:12px">10%</span>
+      </div>
+      <input type="range" id="sl-ev-min" min="5" max="50" step="5" value="10">
+      <div class="slider-limits"><span>5%</span><span>50%</span></div>
+    </div>
+    <div class="slider-row">
+      <div class="slider-header">
+        <span class="slider-name" style="color:#a78bfa">ESS Min SOC</span>
+        <span class="slider-val" id="lbl-ess-min" style="color:#a78bfa;font-size:12px">35%</span>
+      </div>
+      <input type="range" id="sl-ess-min" min="5" max="50" step="5" value="35">
+      <div class="slider-limits"><span>5%</span><span>50%</span></div>
+    </div>
+    <div style="font-size:9px;color:rgba(255,255,255,0.20);line-height:1.5;margin-top:2px">
+      Dashed line on SOC bar shows floor.<br>Discharge stops at this level.
+    </div>
+  </div>
+
   <!-- Sim controls -->
   <div style="display:flex;flex-direction:column;gap:6px">
     <div class="ctrl-label">Simulation</div>
@@ -334,6 +360,7 @@ const S = {
   essSOC:      75,
   essSOCInit:  75,
   essMinSOC:   35,
+  evMinSOC:    10,
   essCapKWh:   17,
   simTime:     6.0,
   simPaused:   false,
@@ -394,7 +421,7 @@ function calcFlows() {
   const extraLoad = Object.keys(S.loads).reduce((t,k) => t+(S.loads[k]?S.loadKW[k]:0), 0);
   const load   = baseLoad + extraLoad;
 
-  const evAvail      = S.evSOC  > 10.1;
+  const evAvail      = S.evSOC  > S.evMinSOC  + 0.1;
   const evChargeable = S.evSOC  < 99.9;
   const essAvail     = S.essSOC > S.essMinSOC + 0.1;
   const essChargeable= S.essSOC < 99.9;
@@ -774,7 +801,7 @@ function drawBatteryIcon(x, y, r, soc, col) {
   }
 
   // Min-SOC dashed marker at 35%
-  const mx = bx+2+(w-4)*0.35;
+  const mx = bx+2+(w-4)*(S.essMinSOC/100);
   ctx.save();
   ctx.setLineDash([2,2]);
   ctx.strokeStyle=rgba('#f87171',0.50); ctx.lineWidth=1.1;
@@ -902,7 +929,7 @@ function drawESSNode(f) {
 
 function drawEVNode(f) {
   const n = NODES.ev, abs = Math.abs(f.pEV), active = abs > 0.05;
-  const depleted = S.evSOC <= 10.5;
+  const depleted = S.evSOC <= S.evMinSOC + 0.5;
   drawNodeRing(n, active);
   drawTruckIcon(n.x, n.y-4, n.r*0.78, active ? n.color : rgba(n.color, depleted ? 0.20 : 0.35));
 
@@ -912,6 +939,12 @@ function drawEVNode(f) {
   const fc = S.evSOC>40?'#4cd964':S.evSOC>20?'#f5a623':'#f87171';
   const fw = bw*S.evSOC/100;
   if (fw>0) { rrect(bx,bby,fw,bh,2); ctx.fillStyle=rgba(fc,active?0.72:0.30); ctx.fill(); }
+  // Min-SOC tick
+  const evMx = bx + bw*(S.evMinSOC/100);
+  ctx.save(); ctx.setLineDash([2,2]);
+  ctx.strokeStyle=rgba('#f87171',0.55); ctx.lineWidth=1.1;
+  ctx.beginPath(); ctx.moveTo(evMx, bby-1); ctx.lineTo(evMx, bby+bh+1); ctx.stroke();
+  ctx.restore();
 
   const sub = depleted               ? `Depleted | ${Math.round(S.evSOC)}%`
             : f.pEV < -0.05          ? `Charging | ${Math.round(S.evSOC)}%`
@@ -1413,6 +1446,40 @@ slEssSoc.addEventListener('input', function () {
   fillSlider(this, '#a78bfa');
 });
 fillSlider(slEssSoc, '#a78bfa');
+
+// ── EV min SOC slider ─────────────────────────────────────────────
+const slEvMin = document.getElementById('sl-ev-min');
+slEvMin.addEventListener('input', function () {
+  S.evMinSOC = parseFloat(this.value);
+  document.getElementById('lbl-ev-min').textContent = Math.round(S.evMinSOC) + '%';
+  // Keep start SOC above the new floor
+  if (S.evSOCInit < S.evMinSOC + 5) {
+    S.evSOCInit = S.evMinSOC + 5;
+    document.getElementById('sl-ev-soc').value = S.evSOCInit;
+    document.getElementById('lbl-ev-soc').textContent = Math.round(S.evSOCInit) + '%';
+    fillSlider(document.getElementById('sl-ev-soc'), '#4cd964');
+  }
+  fillSlider(this, '#4cd964');
+});
+fillSlider(slEvMin, '#4cd964');
+
+// ── ESS min SOC slider ────────────────────────────────────────────
+const slEssMin = document.getElementById('sl-ess-min');
+slEssMin.addEventListener('input', function () {
+  S.essMinSOC = parseFloat(this.value);
+  document.getElementById('lbl-ess-min').textContent = Math.round(S.essMinSOC) + '%';
+  // Keep start SOC above the new floor
+  if (S.essSOCInit < S.essMinSOC + 5) {
+    S.essSOCInit = S.essMinSOC + 5;
+    document.getElementById('sl-ess-soc').value = S.essSOCInit;
+    document.getElementById('lbl-ess-soc').textContent = Math.round(S.essSOCInit) + '%';
+    fillSlider(document.getElementById('sl-ess-soc'), '#a78bfa');
+  }
+  // Update ESS start SOC slider min to match
+  document.getElementById('sl-ess-soc').min = S.essMinSOC;
+  fillSlider(this, '#a78bfa');
+});
+fillSlider(slEssMin, '#a78bfa');
 
 // ── Pause / Resume ────────────────────────────────────────────────
 const btnPause = document.getElementById('btn-pause');
