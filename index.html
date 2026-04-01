@@ -418,9 +418,9 @@ function calcFlows() {
   const hour   = S.simTime % 24;
   const sol    = S.solar ? getSolarKW(hour) : 0;
   const isPeak = isPeakHour(hour);
-  const baseLoad  = getBaseLoadKW(hour);
+  const baseLoad  = 0; // no hidden base load — only explicit toggled loads
   const extraLoad = Object.keys(S.loads).reduce((t,k) => t+(S.loads[k]?S.loadKW[k]:0), 0);
-  const load   = baseLoad + extraLoad;
+  const load      = extraLoad;
 
   const evAvail      = S.evSOC  > S.evMinSOC  + 0.1;
   const evChargeable = S.evSOC  < 99.9;
@@ -509,9 +509,11 @@ function calcFlows() {
   }
 
   const pGrid   = load - sol - pEV - pESS;
-  // netHome = what the panel actually sees after local sources serve load
-  // positive = still drawing from grid side, zero = fully self-served, negative = exporting
-  const netHome = Math.max(0, load - sol - Math.max(0, pEV) - Math.max(0, pESS));
+  // netHome = total net draw at the main panel = pGrid
+  // This correctly accounts for EV/ESS charging (adds to draw) and discharging (reduces draw)
+  // When EV discharges equal to load → pGrid = 0 → "Net Zero" ✓
+  // When EV charges → pGrid = load + charge → Home = Grid = Meter ✓
+  const netHome = pGrid;
   return { pSolar:sol, pGrid, pEV, pESS, load, netHome, hour, isPeak, baseLoad };
 }
 
@@ -889,11 +891,14 @@ function drawMeterNode(f) {
 }
 
 function drawHomeNode(f) {
-  const n = NODES.home;
+  const n   = NODES.home;
+  const net = f.netHome;
   drawNodeRing(n, true);
   drawHomeIcon(n.x, n.y, n.r*0.38, n.color);
-  const sub = f.netHome < 0.05 ? 'Net Zero' : 'Consuming';
-  drawNodeLabels(n, f.netHome.toFixed(1)+' kW', sub, true);
+  const sub = net < -0.05 ? 'Net Export'
+            : net <  0.05 ? 'Net Zero'
+            :               'Net Import';
+  drawNodeLabels(n, Math.abs(net).toFixed(1)+' kW', sub, true);
 }
 
 function drawESSNode(f) {
@@ -1392,6 +1397,56 @@ function drawTimeline(f) {
   ctx.restore();
 }
 
+// ── Home load summary ─────────────────────────────────────────────
+function drawLoadSummary(f) {
+  const hvac = LOAD_NODES.hvac;
+  const cx   = hvac.x;
+  const by   = hvac.y - hvac.r - 14;
+
+  const ids     = ['hvac','stove','dryer','hwh'];
+  const onIds   = ids.filter(k => S.loads[k]);
+  const totalKW = onIds.reduce((t,k) => t + S.loadKW[k], 0);
+
+  ctx.save();
+
+  const pillW = 122;
+  const pillH = onIds.length > 0 ? 32 + onIds.length * 11 : 28;
+  const pillX = cx - pillW/2, pillY = by - pillH;
+
+  ctx.beginPath(); rrect(pillX, pillY, pillW, pillH, 6);
+  ctx.fillStyle   = 'rgba(255,255,255,0.03)';
+  ctx.strokeStyle = 'rgba(255,255,255,0.07)';
+  ctx.lineWidth   = 1;
+  ctx.fill(); ctx.stroke();
+
+  // Total — only active loads
+  ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+  ctx.fillStyle = onIds.length > 0 ? '#fff' : 'rgba(255,255,255,0.30)';
+  ctx.font      = `700 ${totalKW >= 10 ? 12 : 13}px Inter,sans-serif`;
+  ctx.fillText(onIds.length > 0 ? totalKW.toFixed(1) + ' kW' : '—', cx, pillY + 16);
+
+  ctx.fillStyle = 'rgba(255,255,255,0.20)';
+  ctx.font      = '500 7.5px Inter,sans-serif';
+  ctx.fillText('HOME LOADS', cx, pillY + 26);
+
+  // Per-load rows
+  onIds.forEach((k, i) => {
+    const n = LOAD_NODES[k];
+    const y = pillY + 38 + i * 11;
+    ctx.beginPath(); ctx.arc(pillX + 10, y - 3, 2.5, 0, Math.PI * 2);
+    ctx.fillStyle = n.color; ctx.fill();
+    ctx.fillStyle = rgba(n.color, 0.75);
+    ctx.font      = '500 8.5px Inter,sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText(n.label, pillX + 16, y);
+    ctx.fillStyle = 'rgba(255,255,255,0.55)';
+    ctx.textAlign = 'right';
+    ctx.fillText(n.kw.toFixed(1) + ' kW', pillX + pillW - 7, y);
+  });
+
+  ctx.restore();
+}
+
 // ── Main animation loop ───────────────────────────────────────────
 function frame() {
   // Advance simulation time
@@ -1407,6 +1462,7 @@ function frame() {
   drawBackground();
   drawAllWires(f);
   Object.keys(LOAD_NODES).forEach(drawLoadNode);
+  drawLoadSummary(f);
   drawMeterNode(f);
   drawSolarNode(f);
   drawGridNode(f);
