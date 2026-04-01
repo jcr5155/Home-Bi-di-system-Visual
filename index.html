@@ -203,6 +203,7 @@ input[type=range]::-moz-range-thumb {
       <button class="mode-btn" data-ess="0">Ⓐ Backup Only<span class="mode-sub">Charge to 100%, never discharge</span></button>
       <button class="mode-btn ess-active" data-ess="1">Ⓑ Self Consumption<span class="mode-sub">Discharge when load &gt; solar</span></button>
       <button class="mode-btn" data-ess="2">Ⓒ TOU Discharge<span class="mode-sub">Charge off-peak, discharge on-peak</span></button>
+      <button class="mode-btn" data-ess="3">Ⓓ VPP Fixed<span class="mode-sub">Fixed discharge during grid event, charge outside</span></button>
     </div>
   </div>
 
@@ -260,16 +261,16 @@ input[type=range]::-moz-range-thumb {
         <span class="slider-name" style="color:#4cd964">EV Start SOC</span>
         <span class="slider-val" id="lbl-ev-soc" style="color:#4cd964;font-size:12px">80%</span>
       </div>
-      <input type="range" id="sl-ev-soc" min="20" max="100" step="1" value="80">
-      <div class="slider-limits"><span>20%</span><span>100%</span></div>
+      <input type="range" id="sl-ev-soc" min="10" max="100" step="1" value="80">
+      <div class="slider-limits"><span>10%</span><span>100%</span></div>
     </div>
     <div class="slider-row">
       <div class="slider-header">
         <span class="slider-name" style="color:#a78bfa">ESS Start SOC</span>
         <span class="slider-val" id="lbl-ess-soc" style="color:#a78bfa;font-size:12px">75%</span>
       </div>
-      <input type="range" id="sl-ess-soc" min="10" max="100" step="1" value="75">
-      <div class="slider-limits"><span>10%</span><span>100%</span></div>
+      <input type="range" id="sl-ess-soc" min="35" max="100" step="1" value="75">
+      <div class="slider-limits"><span>35%</span><span>100%</span></div>
     </div>
   </div>
 
@@ -281,16 +282,16 @@ input[type=range]::-moz-range-thumb {
         <span class="slider-name" style="color:#4cd964">EV Min SOC</span>
         <span class="slider-val" id="lbl-ev-min" style="color:#4cd964;font-size:12px">10%</span>
       </div>
-      <input type="range" id="sl-ev-min" min="20" max="50" step="5" value="35">
-      <div class="slider-limits"><span>20%</span><span>50%</span></div>
+      <input type="range" id="sl-ev-min" min="5" max="50" step="5" value="10">
+      <div class="slider-limits"><span>5%</span><span>50%</span></div>
     </div>
     <div class="slider-row">
       <div class="slider-header">
         <span class="slider-name" style="color:#a78bfa">ESS Min SOC</span>
         <span class="slider-val" id="lbl-ess-min" style="color:#a78bfa;font-size:12px">35%</span>
       </div>
-      <input type="range" id="sl-ess-min" min="10" max="50" step="5" value="10">
-      <div class="slider-limits"><span>10%</span><span>50%</span></div>
+      <input type="range" id="sl-ess-min" min="5" max="50" step="5" value="35">
+      <div class="slider-limits"><span>5%</span><span>50%</span></div>
     </div>
     <div style="font-size:9px;color:rgba(255,255,255,0.20);line-height:1.5;margin-top:2px">
       Dashed line on SOC bar shows floor.<br>Discharge stops at this level.
@@ -494,6 +495,15 @@ function calcFlows() {
         pESS = -11.5;
       }
       // During peak with sol > load: let excess export, ESS stays idle (already dispatched)
+      break;
+    }
+
+    case 3: { // VPP Fixed — discharge at fixed rate during grid event, charge outside
+      if (isGridEvent(hour) && essAvail) {
+        pESS = 11.5; // fixed full rate; surplus exports
+      } else if (!isGridEvent(hour) && essChargeable) {
+        pESS = -11.5;
+      }
       break;
     }
   }
@@ -900,8 +910,8 @@ function drawESSNode(f) {
   drawNodeLabels(n, abs.toFixed(1)+' kW', sub, active);
 
   // ESS mode badge — small pill above the node
-  const modeLabels  = ['BACKUP', 'SELF USE', 'TOU'];
-  const modeColors  = ['#f87171', '#4fc3f7', '#f5a623'];
+  const modeLabels  = ['BACKUP', 'SELF USE', 'TOU', 'VPP FIXED'];
+  const modeColors  = ['#f87171', '#4fc3f7', '#f5a623', '#c084fc'];
   const ml = modeLabels[S.essMode], mc = modeColors[S.essMode];
   const bw = 52, bh = 14, bx = n.x - bw/2, by2 = n.y - n.r - 22;
   ctx.save();
@@ -1061,6 +1071,87 @@ function drawAllWires(f) {
   drawWire(solar.x,  solar.y+solar.r, home.x, home.y-home.r,      solar.color, f.pSolar>0.05);
   drawWire(home.x-home.r*0.4, home.y+home.r*0.9, ess.x+ess.r*0.4, ess.y-ess.r*0.9, ess.color, Math.abs(f.pESS)>0.05);
   drawWire(home.x+home.r*0.4, home.y+home.r*0.9, ev.x-ev.r*0.4,   ev.y-ev.r*0.9,   ev.color,  Math.abs(f.pEV)>0.05);
+
+  // ── Comms lines ──────────────────────────────────────────────────
+  // EV/EVSE needs meter visibility for V2G Savings (mode 1) and VPP Variable (mode 2)
+  const evNeedsComms  = (S.mode === 1 || S.mode === 2);
+  // ESS needs meter visibility for Self Consumption (essMode 1) and TOU (essMode 2)
+  const essNeedsComms = (S.essMode === 1 || S.essMode === 2);
+
+  if (evNeedsComms || essNeedsComms) {
+    // Animate dash offset so dots appear to travel meter → device
+    const dashOffset = -(S.tick * 0.4) % 14;
+
+    // Helper: draw one comms arc from meter to a target node
+    function drawCommsArc(targetNode, color) {
+      // Route: slightly offset so it doesn't overlap the power wire
+      const mx = meter.x, my = meter.y;
+      const tx = targetNode.x, ty = targetNode.y;
+      // Control point offset to create a gentle curve below the power wire
+      const cpx = (mx + tx) / 2 + (ty > my ? -30 : 30);
+      const cpy = (my + ty) / 2 + 28;
+
+      ctx.save();
+      // Outer glow pass
+      ctx.beginPath();
+      ctx.moveTo(mx, my); ctx.quadraticCurveTo(cpx, cpy, tx, ty);
+      ctx.strokeStyle = rgba(color, 0.10);
+      ctx.lineWidth   = 4;
+      ctx.lineCap     = 'round';
+      ctx.setLineDash([]);
+      ctx.stroke();
+
+      // Dashed data line
+      ctx.beginPath();
+      ctx.moveTo(mx, my); ctx.quadraticCurveTo(cpx, cpy, tx, ty);
+      ctx.strokeStyle  = rgba(color, 0.70);
+      ctx.lineWidth    = 1.5;
+      ctx.setLineDash([3, 11]);
+      ctx.lineDashOffset = dashOffset;
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // Data label at midpoint
+      const t = 0.50;
+      const m1 = 1 - t;
+      const lx = m1*m1*mx + 2*m1*t*cpx + t*t*tx;
+      const ly = m1*m1*my + 2*m1*t*cpy + t*t*ty;
+      ctx.fillStyle = rgba(color, 0.55);
+      ctx.font      = '500 7.5px Inter,sans-serif';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      // Rotate label along curve tangent
+      const dx = (2*(1-t)*(cpx-mx) + 2*t*(tx-cpx));
+      const dy = (2*(1-t)*(cpy-my) + 2*t*(ty-cpy));
+      ctx.save();
+      ctx.translate(lx, ly);
+      ctx.rotate(Math.atan2(dy, dx));
+      ctx.fillRect(-18, -8, 36, 14);
+      ctx.fillStyle = rgba(color, 0.18);
+      ctx.fillRect(-18, -8, 36, 14);
+      ctx.fillStyle = rgba(color, 0.70);
+      ctx.fillText('kW data', 0, 0);
+      ctx.restore();
+
+      // Arrow at target end showing data direction
+      const t2 = 0.88;
+      const m2 = 1 - t2;
+      const ax = m2*m2*mx + 2*m2*t2*cpx + t2*t2*tx;
+      const ay = m2*m2*my + 2*m2*t2*cpy + t2*t2*ty;
+      const ang = Math.atan2(ty - ay, tx - ax);
+      const sz = 4.5;
+      ctx.strokeStyle = rgba(color, 0.55); ctx.lineWidth = 1.4; ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(tx - Math.cos(ang-0.45)*sz, ty - Math.sin(ang-0.45)*sz);
+      ctx.lineTo(tx, ty);
+      ctx.lineTo(tx - Math.cos(ang+0.45)*sz, ty - Math.sin(ang+0.45)*sz);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    const commsColor = '#e2e8f0'; // neutral light — distinct from power flow colors
+    if (evNeedsComms)  drawCommsArc(ev,  commsColor);
+    if (essNeedsComms) drawCommsArc(ess, commsColor);
+  }
 
   // Arrows — Grid ↔ Meter ↔ Home
   if (Math.abs(f.pGrid) > 0.05) {
@@ -1516,7 +1607,7 @@ togPeak.addEventListener('click', () => {
 // ── Grid event panel show/hide ────────────────────────────────────
 function updateGridEventPanel() {
   const panel = document.getElementById('grid-event-panel');
-  panel.classList.toggle('visible', S.mode === 2 || S.mode === 3);
+  panel.classList.toggle('visible', S.mode === 2 || S.mode === 3 || S.essMode === 3);
 }
 
 function parseTimeInput(val) {
@@ -1526,7 +1617,7 @@ function parseTimeInput(val) {
 }
 
 function updateGridEventStatus() {
-  if (S.mode !== 2 && S.mode !== 3) return;
+  if (S.mode !== 2 && S.mode !== 3 && S.essMode !== 3) return;
   const badge = document.getElementById('ge-status');
   const active = isGridEvent(S.simTime % 24);
   badge.textContent = active ? '⚡ Dispatching now' : '🔌 Charging from grid';
@@ -1544,6 +1635,9 @@ document.getElementById('ge-end').addEventListener('change', function () {
 
 // Call status updater each frame — insert into frame loop
 document.querySelectorAll('#ev-mode-btns .mode-btn').forEach(btn => {
+  btn.addEventListener('click', updateGridEventPanel);
+});
+document.querySelectorAll('#ess-mode-btns .mode-btn').forEach(btn => {
   btn.addEventListener('click', updateGridEventPanel);
 });
 
@@ -1583,13 +1677,14 @@ frame();
         <li><span class="pill pill-red">Backup Only</span> Battery charges to 100% and holds — never discharges during normal operation. Reserved for outage backup. No special interconnection beyond standard ESS permit. Simplest utility approval path.</li>
         <li><span class="pill pill-cyan">Self Consumption</span> Battery discharges whenever home load exceeds solar production, minimizing grid draw. Charges from solar surplus or off-peak grid. Requires ESS interconnection permit and parallel operating agreement. Meter data is needed to measure net load — typically provided by CT sensors in the ESS gateway (e.g. GM Energy ESS) or a utility-provided smart meter.</li>
         <li><span class="pill pill-orange">TOU Discharge</span> Battery charges at full rate during off-peak hours and discharges only during peak rate windows. Behavior is identical to V2G – Savings but from the stationary battery. Requires same metering infrastructure as Self Consumption plus a <strong>TOU rate structure</strong> from your utility (e.g. PSE EV TOU rate).</li>
+        <li><span class="pill pill-purple">VPP Fixed</span> Battery discharges at a fixed full rate during a defined grid event window — same logic as V2G VPP Fixed but from the stationary ESS. Surplus beyond home load exports to the grid. Requires active VPP enrollment, export metering agreement, parallel operating agreement, and net-metering or export tariff with utility.</li>
       </ul>
     </div>
 
     <div class="guide-section">
       <div class="guide-heading">Metering &amp; Interconnection Notes</div>
       <ul class="guide-list">
-        <li><strong>AMI integration</strong> — utility pushes real-time interval meter data to the charger or home energy system via API. Most common with PSE, Xcel, and other advanced-metering utilities. Lowest hardware cost but depends on utility program availability.</li>
+        <li><strong>Metering comms (dotted line)</strong> — the animated dotted line from the Utility Meter to the EV or ESS node appears whenever a mode requires real-time consumption data to operate. V2G Savings and VPP Variable need net load at the meter to determine how much to discharge. Self Consumption and TOU Discharge need the same signal to know when load exceeds solar. Without this data path — via AMI, CT sensors, meter collar, or the V2H kit — these modes cannot function correctly.</li> Most common with PSE, Xcel, and other advanced-metering utilities. Lowest hardware cost but depends on utility program availability.</li>
         <li><strong>Meter collar / meter socket adapter</strong> — installs between the utility meter and socket, adding CT sensors to measure whole-home consumption without a separate meter. Used by some V2H kits (e.g. Span, Lumin) when AMI data isn't available.</li>
         <li><strong>Separate revenue-grade meter</strong> — a second utility-approved meter installed at the inverter or charger output. Required by some utilities for export metering in VPP or net-metering programs. Adds cost and requires utility coordination.</li>
         <li><strong>V2H kit built-in CTs</strong> — the GM Energy V2H system includes current transformers that mount inside the main panel, measuring net consumption locally. This is the most practical path for V2G Savings and Self Consumption without AMI or a meter collar.</li>
