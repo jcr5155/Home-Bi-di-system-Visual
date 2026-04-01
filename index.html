@@ -200,8 +200,8 @@ input[type=range]::-moz-range-thumb {
   <div class="ctrl-col" style="min-width:148px">
     <div class="ctrl-label">Battery (ESS) Mode</div>
     <div class="btn-group" id="ess-mode-btns">
-      <button class="mode-btn" data-ess="0">Ⓐ Backup Only<span class="mode-sub">Charge to 100%, never discharge</span></button>
-      <button class="mode-btn ess-active" data-ess="1">Ⓑ Self Consumption<span class="mode-sub">Discharge when load &gt; solar</span></button>
+      <button class="mode-btn ess-active" data-ess="0">Ⓐ Backup Only<span class="mode-sub">Charge to 100%, never discharge</span></button>
+      <button class="mode-btn" data-ess="1">Ⓑ Self Consumption<span class="mode-sub">Discharge when load &gt; solar</span></button>
       <button class="mode-btn" data-ess="2">Ⓒ TOU Discharge<span class="mode-sub">Charge off-peak, discharge on-peak</span></button>
       <button class="mode-btn" data-ess="3">Ⓓ VPP Fixed<span class="mode-sub">Fixed discharge during grid event, charge outside</span></button>
     </div>
@@ -350,7 +350,7 @@ const PEAK_END    = 21;   // 9 pm
 // ── State ────────────────────────────────────────────────────────
 const S = {
   mode:        0,       // EV mode 0–3
-  essMode:     1,       // ESS mode 0–2
+  essMode:     0,       // ESS mode 0–3  (default: Backup Only)
   solar:       true,
   solarPeakKW: 6.0,
   evRateKW:    7.2,
