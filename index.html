@@ -1080,75 +1080,44 @@ function drawAllWires(f) {
 
   if (evNeedsComms || essNeedsComms) {
     // Animate dash offset so dots appear to travel meter → device
-    const dashOffset = -(S.tick * 0.4) % 14;
+    // Animate slowly — subtle pulse rather than fast travel
+    const dashOffset = -(S.tick * 0.18) % 12;
 
     // Helper: draw one comms arc from meter to a target node
     function drawCommsArc(targetNode, color) {
-      // Route: slightly offset so it doesn't overlap the power wire
       const mx = meter.x, my = meter.y;
       const tx = targetNode.x, ty = targetNode.y;
-      // Control point offset to create a gentle curve below the power wire
       const cpx = (mx + tx) / 2 + (ty > my ? -30 : 30);
       const cpy = (my + ty) / 2 + 28;
 
       ctx.save();
-      // Outer glow pass
-      ctx.beginPath();
-      ctx.moveTo(mx, my); ctx.quadraticCurveTo(cpx, cpy, tx, ty);
-      ctx.strokeStyle = rgba(color, 0.10);
-      ctx.lineWidth   = 4;
-      ctx.lineCap     = 'round';
-      ctx.setLineDash([]);
-      ctx.stroke();
 
-      // Dashed data line
+      // Single thin dashed line — no glow, very low opacity
       ctx.beginPath();
       ctx.moveTo(mx, my); ctx.quadraticCurveTo(cpx, cpy, tx, ty);
-      ctx.strokeStyle  = rgba(color, 0.70);
-      ctx.lineWidth    = 1.5;
-      ctx.setLineDash([3, 11]);
+      ctx.strokeStyle  = rgba(color, 0.28);
+      ctx.lineWidth    = 0.9;
+      ctx.lineCap      = 'butt';
+      ctx.setLineDash([2, 9]);
       ctx.lineDashOffset = dashOffset;
       ctx.stroke();
       ctx.setLineDash([]);
 
-      // Data label at midpoint
+      // Tiny label — just enough to identify, not to dominate
       const t = 0.50;
       const m1 = 1 - t;
       const lx = m1*m1*mx + 2*m1*t*cpx + t*t*tx;
       const ly = m1*m1*my + 2*m1*t*cpy + t*t*ty;
-      ctx.fillStyle = rgba(color, 0.55);
-      ctx.font      = '500 7.5px Inter,sans-serif';
-      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      // Rotate label along curve tangent
-      const dx = (2*(1-t)*(cpx-mx) + 2*t*(tx-cpx));
-      const dy = (2*(1-t)*(cpy-my) + 2*t*(ty-cpy));
-      ctx.save();
-      ctx.translate(lx, ly);
-      ctx.rotate(Math.atan2(dy, dx));
-      ctx.fillRect(-18, -8, 36, 14);
-      ctx.fillStyle = rgba(color, 0.18);
-      ctx.fillRect(-18, -8, 36, 14);
-      ctx.fillStyle = rgba(color, 0.70);
-      ctx.fillText('kW data', 0, 0);
-      ctx.restore();
+      ctx.fillStyle    = rgba(color, 0.30);
+      ctx.font         = '400 7px Inter,sans-serif';
+      ctx.textAlign    = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('meter data', lx, ly - 6);
 
-      // Arrow at target end showing data direction
-      const t2 = 0.88;
-      const m2 = 1 - t2;
-      const ax = m2*m2*mx + 2*m2*t2*cpx + t2*t2*tx;
-      const ay = m2*m2*my + 2*m2*t2*cpy + t2*t2*ty;
-      const ang = Math.atan2(ty - ay, tx - ax);
-      const sz = 4.5;
-      ctx.strokeStyle = rgba(color, 0.55); ctx.lineWidth = 1.4; ctx.lineCap = 'round';
-      ctx.beginPath();
-      ctx.moveTo(tx - Math.cos(ang-0.45)*sz, ty - Math.sin(ang-0.45)*sz);
-      ctx.lineTo(tx, ty);
-      ctx.lineTo(tx - Math.cos(ang+0.45)*sz, ty - Math.sin(ang+0.45)*sz);
-      ctx.stroke();
       ctx.restore();
     }
 
-    const commsColor = '#e2e8f0'; // neutral light — distinct from power flow colors
+    const commsColor = '#cbd5e1'; // cool neutral, doesn't read as energy
     if (evNeedsComms)  drawCommsArc(ev,  commsColor);
     if (essNeedsComms) drawCommsArc(ess, commsColor);
   }
