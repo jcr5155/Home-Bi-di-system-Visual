@@ -508,8 +508,11 @@ function calcFlows() {
     }
   }
 
-  const pGrid = load - sol - pEV - pESS;
-  return { pSolar:sol, pGrid, pEV, pESS, load, hour, isPeak, baseLoad };
+  const pGrid   = load - sol - pEV - pESS;
+  // netHome = what the panel actually sees after local sources serve load
+  // positive = still drawing from grid side, zero = fully self-served, negative = exporting
+  const netHome = Math.max(0, load - sol - Math.max(0, pEV) - Math.max(0, pESS));
+  return { pSolar:sol, pGrid, pEV, pESS, load, netHome, hour, isPeak, baseLoad };
 }
 
 // ── SOC integration ───────────────────────────────────────────────
@@ -889,7 +892,8 @@ function drawHomeNode(f) {
   const n = NODES.home;
   drawNodeRing(n, true);
   drawHomeIcon(n.x, n.y, n.r*0.38, n.color);
-  drawNodeLabels(n, f.load.toFixed(1)+' kW', 'Consuming', true);
+  const sub = f.netHome < 0.05 ? 'Net Zero' : 'Consuming';
+  drawNodeLabels(n, f.netHome.toFixed(1)+' kW', sub, true);
 }
 
 function drawESSNode(f) {
@@ -1266,22 +1270,41 @@ function drawTimeline(f) {
   // Playhead line
   const px = TL_X + (hr / 24) * TL_W;
   ctx.save();
-  ctx.strokeStyle = 'rgba(255,255,255,0.70)';
-  ctx.lineWidth   = 1.5;
+  ctx.strokeStyle = scrubbing ? 'rgba(255,255,255,0.90)' : 'rgba(255,255,255,0.70)';
+  ctx.lineWidth   = scrubbing ? 2 : 1.5;
   ctx.shadowColor = 'rgba(255,255,255,0.4)';
-  ctx.shadowBlur  = 4;
-  ctx.beginPath(); ctx.moveTo(px, TL_Y - 8); ctx.lineTo(px, TL_Y + TL_H + 4);
+  ctx.shadowBlur  = scrubbing ? 8 : 4;
+  ctx.beginPath(); ctx.moveTo(px, TL_Y - 12); ctx.lineTo(px, TL_Y + TL_H + 4);
   ctx.stroke();
   ctx.restore();
 
-  // Playhead dot
+  // Playhead handle — larger when scrubbing
+  const handleR = scrubbing ? 6 : 4;
   ctx.save();
-  ctx.beginPath(); ctx.arc(px, TL_Y - 8, 4, 0, Math.PI * 2);
-  ctx.fillStyle   = '#fff';
-  ctx.shadowColor = 'rgba(255,255,255,0.6)';
-  ctx.shadowBlur  = 6;
+  ctx.beginPath(); ctx.arc(px, TL_Y - 12, handleR, 0, Math.PI * 2);
+  ctx.fillStyle   = scrubbing ? '#4fc3f7' : '#fff';
+  ctx.shadowColor = scrubbing ? 'rgba(79,195,247,0.8)' : 'rgba(255,255,255,0.6)';
+  ctx.shadowBlur  = scrubbing ? 10 : 6;
   ctx.fill();
+  // Grip lines on handle
+  ctx.strokeStyle = 'rgba(0,0,0,0.40)'; ctx.lineWidth = 1; ctx.shadowBlur = 0;
+  for (let gi = -1; gi <= 1; gi++) {
+    ctx.beginPath();
+    ctx.moveTo(px + gi*2, TL_Y - 12 - handleR*0.45);
+    ctx.lineTo(px + gi*2, TL_Y - 12 + handleR*0.45);
+    ctx.stroke();
+  }
   ctx.restore();
+
+  // "Drag to scrub" hint — fades in only when paused and not actively scrubbing
+  if (S.simPaused && !scrubbing) {
+    ctx.save();
+    ctx.fillStyle = 'rgba(255,255,255,0.22)';
+    ctx.font = '400 8px Inter,sans-serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+    ctx.fillText('drag to scrub', px, TL_Y - 20);
+    ctx.restore();
+  }
 
   // Time readout + peak badge
   const hh  = Math.floor(hr) % 24;
@@ -1401,15 +1424,76 @@ function frame() {
   requestAnimationFrame(frame);
 }
 
-// ── Click to toggle loads ─────────────────────────────────────────
-canvas.addEventListener('click', e => {
+// ── Timeline scrubber + load toggle ──────────────────────────────
+const TL_X_JS = 30, TL_W_JS = W - 60;
+const TL_Y_JS = H - 62, TL_H_JS = 28;
+const TL_HIT_TOP    = TL_Y_JS - 14;  // generous hit zone above bar
+const TL_HIT_BOTTOM = TL_Y_JS + TL_H_JS + 14;
+
+let scrubbing = false;
+
+function canvasCoords(e) {
   const rect = canvas.getBoundingClientRect();
-  const mx = (e.clientX - rect.left) * (W / rect.width);
-  const my = (e.clientY - rect.top)  * (H / rect.height);
+  const src  = e.touches ? e.touches[0] : e;
+  return {
+    mx: (src.clientX - rect.left) * (W / rect.width),
+    my: (src.clientY - rect.top)  * (H / rect.height),
+  };
+}
+
+function trySetTimeFromPointer(mx) {
+  const t = Math.max(0, Math.min(1, (mx - TL_X_JS) / TL_W_JS));
+  S.simTime   = t * 24;
+  S.simPaused = true;
+  document.getElementById('btn-pause').textContent = '▶ Resume';
+  document.getElementById('btn-pause').classList.add('paused');
+}
+
+function isOnTimeline(my) {
+  return my >= TL_HIT_TOP && my <= TL_HIT_BOTTOM;
+}
+
+// Pointer down — start scrub or toggle load
+canvas.addEventListener('pointerdown', e => {
+  const { mx, my } = canvasCoords(e);
+  if (isOnTimeline(my)) {
+    scrubbing = true;
+    canvas.setPointerCapture(e.pointerId);
+    trySetTimeFromPointer(mx);
+    return;
+  }
+  // Load node toggle
   for (const id of Object.keys(LOAD_NODES)) {
     const n = LOAD_NODES[id];
     if (Math.hypot(mx-n.x, my-n.y) <= n.r+14) { S.loads[id] = !S.loads[id]; return; }
   }
+});
+
+canvas.addEventListener('pointermove', e => {
+  if (!scrubbing) return;
+  const { mx } = canvasCoords(e);
+  trySetTimeFromPointer(mx);
+});
+
+canvas.addEventListener('pointerup', () => { scrubbing = false; });
+canvas.addEventListener('pointercancel', () => { scrubbing = false; });
+
+// Touch support
+canvas.addEventListener('touchstart', e => {
+  const { mx, my } = canvasCoords(e);
+  if (isOnTimeline(my)) { e.preventDefault(); scrubbing = true; trySetTimeFromPointer(mx); }
+}, { passive: false });
+canvas.addEventListener('touchmove', e => {
+  if (!scrubbing) return;
+  e.preventDefault();
+  trySetTimeFromPointer(canvasCoords(e).mx);
+}, { passive: false });
+canvas.addEventListener('touchend', () => { scrubbing = false; });
+
+// Show grab cursor when hovering timeline
+canvas.addEventListener('mousemove', e => {
+  const { my } = canvasCoords(e);
+  canvas.style.cursor = isOnTimeline(my) ? 'ew-resize' : 'default';
 });
 
 // ── Slider fill helper ────────────────────────────────────────────
