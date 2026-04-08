@@ -1794,7 +1794,7 @@ frame();
       <div class="guide-heading">Metering &amp; Interconnection Notes</div>
       <ul class="guide-list">
         <li><strong>Metering comms (dotted line)</strong> — the animated dotted line from the Utility Meter to the EV or ESS node appears whenever a mode requires real-time consumption data to operate. V2G Savings and VPP Variable need net load at the meter to determine how much to discharge. Self Consumption and TOU Discharge need the same signal to know when load exceeds solar. Without this data path — via AMI, CT sensors, meter collar, or the V2H kit — these modes cannot function correctly.
-        <li>Most common with PSE, Xcel, and other advanced-metering utilities. Lowest hardware cost but depends on utility program availability.</li>
+        <li>       Most common with PSE, Xcel, and other advanced-metering utilities. Lowest hardware cost but depends on utility program availability.</li>
         <li><strong>Meter collar / meter socket adapter</strong> — installs between the utility meter and socket, adding CT sensors to measure whole-home consumption without a separate meter. Used by some V2H kits (e.g. Span, Lumin) when AMI data isn't available.</li>
         <li><strong>Separate revenue-grade meter</strong> — a second utility-approved meter installed at the inverter or charger output. Required by some utilities for export metering in VPP or net-metering programs. Adds cost and requires utility coordination.</li>
         <li><strong>V2H kit built-in CTs</strong> — the GM Energy V2H system includes current transformers that mount inside the main panel, measuring net consumption locally. This is the most practical path for V2G Savings and Self Consumption without AMI or a meter collar.</li>
